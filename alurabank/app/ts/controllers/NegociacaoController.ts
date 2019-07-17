@@ -1,6 +1,9 @@
 import { Negociacao, Negociacoes } from '../models/index';
 import { NegociacoesView, MensagemView } from '../views/index';
-import { logarTempoDeExecucao, domInject } from '../helpers/index';
+import { logarTempoDeExecucao, domInject } from '../helpers/decorators/index';
+import { NegociacaoService } from '../services/index';
+import { throttle } from '../helpers/decorators/index';
+import { imprime } from '../helpers/index'
 
 export class NegociacaoController{
 
@@ -15,6 +18,8 @@ export class NegociacaoController{
     private _negociacoesView = new NegociacoesView('#negociacoesView');
     private _mensagemView = new MensagemView('#mensagemView');
 
+    private _service = new NegociacaoService();
+
     constructor(){
         this._negociacoesView.update(this._negociacoes);
     }
@@ -24,7 +29,7 @@ export class NegociacaoController{
 
         event.preventDefault();
 
-        let data = new Date(this._inputData.val().replace("/-/g", ","));
+        let data = new Date(this._inputData.val().replace(/-/g, ','));
 
         if(!this._ehDiaUtil(data)){
             this._mensagemView.update('Somente negociações em dias úteis, por favor!');
@@ -40,10 +45,38 @@ export class NegociacaoController{
         this._negociacoes.adiciona(negociacao);
         this._negociacoesView.update(this._negociacoes);
         this._mensagemView.update('Negociação adicionada com sucesso');
+
+        imprime(negociacao);
     }
 
     private _ehDiaUtil(data: Date) {
         return data.getDay() != DiaDaSemana.Sabado && data.getDay() != DiaDaSemana.Domingo;
+    }
+
+    @throttle()
+    async importaDados() {
+
+        try {
+            const negociacoesParaImportar = await this._service
+                .obterNegociacoes((res: any) => {
+
+                    if(res.ok) {
+                        return res;
+                    } else {
+                        throw new Error(res.statusText);
+                    }
+                });
+
+            const negociacoesJaImportadas = this._negociacoes.paraArray();
+
+            negociacoesParaImportar
+                .filter(negociacao => !negociacoesJaImportadas.some(jaImportada => negociacao.ehIgual(jaImportada)))
+                .forEach(negociacao => this._negociacoes.adiciona(negociacao));
+
+            this._negociacoesView.update(this._negociacoes);
+        } catch(err) {
+            this._mensagemView.update(err.message);
+        }
     }
 }
 
